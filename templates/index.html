@@ -1,48 +1,76 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Keni Cloner Panel</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { background: #000; color: #0f0; font-family: 'Courier New', monospace; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .panel { border: 2px solid #0f0; padding: 25px; box-shadow: 0 0 20px #0f0; border-radius: 15px; width: 90%; max-width: 400px; text-align: center; }
-        input { width: 100%; padding: 12px; margin: 10px 0; background: #111; border: 1px solid #0f0; color: #0ff; border-radius: 5px; box-sizing: border-box; }
-        button { width: 100%; padding: 15px; background: #0f0; color: #000; border: none; cursor: pointer; font-weight: bold; font-size: 16px; border-radius: 5px; margin-top: 10px; }
-        button:hover { background: #0c0; box-shadow: 0 0 10px #0f0; }
-        h2 { text-decoration: underline; margin-bottom: 20px; }
-        #msg { margin-top: 15px; color: #ff0; font-size: 14px; }
-    </style>
-</head>
-<body>
-    <div class="panel">
-        <h2>KENI CLONER 1.0</h2>
-        <input type="text" id="token" placeholder="Бот Токені">
-        <input type="text" id="source" placeholder="Source Server ID">
-        <input type="text" id="target" placeholder="Target Server ID">
-        <button onclick="startClone()">КӨШІРУДІ БАСТАУ</button>
-        <p id="msg"></p>
-    </div>
+import discord
+from discord.ext import commands
+from flask import Flask, render_template, request, jsonify
+import threading
 
-    <script>
-        function startClone() {
-            const msg = document.getElementById('msg');
-            msg.innerText = "Күте тұрыңыз, бот қосылуда...";
-            const data = {
-                token: document.getElementById('token').value,
-                source: document.getElementById('source').value,
-                target: document.getElementById('target').value
-            };
-            fetch('/clone', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            }).then(res => res.json()).then(d => {
-                msg.innerText = d.message;
-            }).catch(err => {
-                msg.innerText = "Қате орын алды. Токенді тексеріңіз.";
-            });
-        }
-    </script>
-</body>
-</html>
+app = Flask(__name__)
 
+async def start_cloning(token, source_id, target_id):
+    intents = discord.Intents.all()
+    bot = commands.Bot(command_prefix="!", intents=intents)
+
+    @bot.event
+    async def on_ready():
+        print(f'Бот қосылды: {bot.user}')
+        source_guild = bot.get_guild(int(source_id))
+        target_guild = bot.get_guild(int(target_id))
+
+        if not source_guild or not target_guild:
+            print("Сервер табылмады!")
+            await bot.close()
+            return
+
+        print("Ескі каналдар мен рөлдер өшірілуде...")
+        for channel in target_guild.channels: await channel.delete()
+        for role in target_guild.roles:
+            if role.name != "@everyone" and not role.managed:
+                try: await role.delete()
+                except: continue
+
+        print("Рөлдер көшірілуде...")
+        roles_map = {}
+        for role in reversed(source_guild.roles):
+            if role.name != "@everyone" and not role.managed:
+                new_role = await target_guild.create_role(name=role.name, permissions=role.permissions, color=role.color, hoist=role.hoist, mentionable=role.mentionable)
+                roles_map[role] = new_role
+
+        print("Категориялар мен каналдар көшірілуде...")
+        for category in source_guild.categories:
+            new_category = await target_guild.create_category(name=category.name)
+            for channel in category.channels:
+                if isinstance(channel, discord.TextChannel):
+                    await new_category.create_text_channel(name=channel.name, topic=channel.topic, nsfw=channel.nsfw)
+                elif isinstance(channel, discord.VoiceChannel):
+                    await new_category.create_voice_channel(name=channel.name, user_limit=channel.user_limit)
+
+        print("Көшіру аяқталды!")
+        await bot.close()
+
+    try:
+        await bot.start(token)
+    except Exception as e:
+        print(f"Қате: {e}")
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/clone', methods=['POST'])
+def clone():
+    data = request.json
+    # Ботты бөлек ағында іске қосу
+    thread = threading.Thread(target=lambda: discord.utils.setup_logging() or discord.run_coroutine_threadsafe(start_cloning(data['token'], data['source'], data['target']), discord.utils._get_event_loop()))
+    
+    # Жеңілдетілген іске қосу нұсқасы
+    def run_it():
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(start_cloning(data['token'], data['source'], data['target']))
+    
+    threading.Thread(target=run_it).start()
+    return jsonify({"status": "Success", "message": "Процесс басталды! Серверіңізді тексеріңіз."})
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=8080)
+    
