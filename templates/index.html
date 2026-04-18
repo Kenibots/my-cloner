@@ -1,81 +1,65 @@
-<!DOCTYPE html>
-<html lang="kk">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AGLARUS STYLE CLONER</title>
-    <style>
-        :root { --main-color: #f1c40f; --bg-dark: #0a0a0a; --card-bg: #151515; }
-        body { background-color: var(--bg-dark); color: white; font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; flex-direction: column; align-items: center; }
-        .header { text-align: center; padding: 50px 20px; background: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url('https://i.imgur.com/8Q5p6yX.jpeg'); background-size: cover; width: 100%; border-bottom: 2px solid var(--main-color); }
-        .header h1 { font-size: 3rem; letter-spacing: 5px; margin: 0; text-shadow: 0 0 15px var(--main-color); }
-        .container { max-width: 900px; width: 95%; margin-top: -30px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .card { background: var(--card-bg); padding: 20px; border-radius: 10px; border: 1px solid #333; }
-        h3 { color: var(--main-color); font-size: 0.9rem; text-transform: uppercase; }
-        input[type="text"] { width: 100%; padding: 12px; background: #222; border: 1px solid #444; color: white; border-radius: 5px; margin-top: 10px; box-sizing: border-box; }
-        .options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
-        .opt-item { display: flex; align-items: center; font-size: 0.8rem; background: #1a1a1a; padding: 8px; border-radius: 5px; }
-        .opt-item input { margin-right: 10px; accent-color: var(--main-color); }
-        .btn-start { width: 100%; padding: 15px; background: white; color: black; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; margin-top: 20px; transition: 0.3s; }
-        .btn-start:hover { background: var(--main-color); transform: scale(1.02); }
-        #status { text-align: center; margin-top: 15px; color: var(--main-color); font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>⚔️ AGLARUS ⚔️</h1>
-        <p style="color: #ccc;">SERVER CLONER PREMIUM</p>
-    </div>
-    <div class="container">
-        <div class="card" style="margin-bottom: 20px;">
-            <h3>Бот Токені</h3>
-            <input type="text" id="token" placeholder="Боттың құпия токенін осында қойыңыз...">
-        </div>
-        <div class="grid">
-            <div class="card">
-                <h3>📥 Сервер-источник</h3>
-                <input type="text" id="source" placeholder="ID Сервера">
-            </div>
-            <div class="card">
-                <h3>📤 Сервер-копия</h3>
-                <input type="text" id="target" placeholder="ID Сервера">
-            </div>
-        </div>
-        <div class="card" style="margin-top: 20px;">
-            <h3>⚙️ Көшіру параметрлері</h3>
-            <div class="options">
-                <div class="opt-item"><input type="checkbox" checked> Рөлдер</div>
-                <div class="opt-item"><input type="checkbox" checked> Каналдар</div>
-                <div class="opt-item"><input type="checkbox" checked> Категориялар</div>
-                <div class="opt-item"><input type="checkbox" checked> Текстік каналдар</div>
-                <div class="opt-item"><input type="checkbox" checked> Дауыстық каналдар</div>
-                <div class="opt-item"><input type="checkbox" checked> Рұқсаттар</div>
-                <div class="opt-item"><input type="checkbox"> Эмодзилер (Beta)</div>
-                <div class="opt-item"><input type="checkbox"> Баннерлер</div>
-            </div>
-            <button class="btn-start" onclick="startClone()">КӨШІРУДІ БАСТАУ</button>
-            <p id="status"></p>
-        </div>
-    </div>
-    <script>
-        function startClone() {
-            const status = document.getElementById('status');
-            status.innerText = "⏳ Процесс басталды, Дискордты тексеріңіз...";
-            fetch('/clone', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    token: document.getElementById('token').value,
-                    source: document.getElementById('source').value,
-                    target: document.getElementById('target').value
-                })
-            }).then(res => res.json()).then(d => {
-                status.innerText = "✅ " + d.message;
-            }).catch(e => {
-                status.innerText = "❌ Қате! Токенді немесе ID-лерді тексеріңіз.";
-            });
-        }
-    </script>
-</body>
-</html>
+import discord
+from discord.ext import commands
+from flask import Flask, render_template, request, jsonify
+import threading
+import asyncio
+
+app = Flask(__name__)
+
+async def start_cloning(user_token, source_id, target_id):
+    # discord.py-self кітапханасы немесе ескі нұсқалар self_bot-ты қолдайды
+    # МАҢЫЗДЫ: Стандартты discord.py self-bot-қа шектеу қоюы мүмкін
+    bot = commands.Bot(command_prefix=".", self_bot=True)
+
+    @bot.event
+    async def on_ready():
+        print(f'Аккаунтқа кірдік: {bot.user}')
+        try:
+            source_guild = bot.get_guild(int(source_id))
+            target_guild = bot.get_guild(int(target_id))
+
+            if source_guild and target_guild:
+                # Ескі каналдарды өшіру
+                for channel in target_guild.channels:
+                    try: await channel.delete()
+                    except: continue
+
+                # Рөлдерді көшіру
+                for role in reversed(source_guild.roles):
+                    if role.name != "@everyone":
+                        try:
+                            await target_guild.create_role(name=role.name, permissions=role.permissions, color=role.color)
+                        except: continue
+
+                # Категориялар мен каналдар
+                for category in source_guild.categories:
+                    new_cat = await target_guild.create_category(name=category.name)
+                    for channel in category.channels:
+                        if isinstance(channel, discord.TextChannel):
+                            await new_cat.create_text_channel(name=channel.name)
+                        elif isinstance(channel, discord.VoiceChannel):
+                            await new_cat.create_voice_channel(name=channel.name)
+            
+            await bot.close()
+        except Exception as e:
+            print(f"Қате шықты: {e}")
+            await bot.close()
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/clone', methods=['POST'])
+def clone():
+    data = request.json
+    def run_it():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(start_cloning(data['token'], data['source'], data['target']))
+    
+    threading.Thread(target=run_it).start()
+    return jsonify({"status": "Success", "message": "Процесс басталды! Аккаунтыңызды тексеріңіз."})
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=8080)
+    
