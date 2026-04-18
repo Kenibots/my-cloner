@@ -1,65 +1,102 @@
-import discord
-from discord.ext import commands
-from flask import Flask, render_template, request, jsonify
-import threading
-import asyncio
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AGLARUS SERVER CLONER</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/dist/css/all.min.css">
+    <style>
+        :root { --main-accent: #7289da; --bg-dark: #0f0f12; --card-bg: #1a1a1e; --text-gray: #b9bbbe; }
+        body { background-color: var(--bg-dark); color: white; font-family: 'Whitney', 'Helvetica Neue', sans-serif; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid var(--main-accent); width: 100%; max-width: 800px; padding-bottom: 20px; }
+        .header h1 { font-size: 2.5rem; letter-spacing: 4px; margin: 0; color: #fff; text-shadow: 0 0 10px var(--main-accent); }
+        .main-container { width: 100%; max-width: 800px; }
+        .card { background: var(--card-bg); border-radius: 12px; padding: 25px; margin-bottom: 20px; border: 1px solid #2f2f35; box-shadow: 0 8px 16px rgba(0,0,0,0.5); }
+        .input-group { margin-bottom: 20px; }
+        label { display: block; color: var(--text-gray); font-size: 0.8rem; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; }
+        input { width: 100%; background: #232328; border: 1px solid #333; padding: 12px; border-radius: 6px; color: white; font-size: 1rem; box-sizing: border-box; transition: 0.3s; }
+        input:focus { border-color: var(--main-accent); outline: none; }
+        .btn-start { width: 100%; padding: 16px; background: var(--main-accent); border: none; border-radius: 6px; color: white; font-weight: bold; font-size: 1.1rem; cursor: pointer; transition: 0.3s; }
+        .btn-start:hover { background: #5b6eae; transform: translateY(-2px); }
+        .log-container { background: #000; border-radius: 6px; padding: 15px; height: 150px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 0.85rem; border: 1px solid #333; margin-top: 20px; }
+        .log-entry { margin-bottom: 5px; color: #43b581; }
+        .progress-bar { width: 100%; background: #333; height: 10px; border-radius: 10px; margin-top: 15px; overflow: hidden; display: none; }
+        .progress-fill { width: 0%; height: 100%; background: var(--main-accent); transition: 0.5s; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚔️ AGLARUS ⚔️</h1>
+        <p style="color: var(--text-gray); font-style: italic;">ПУТЬ ВОИНА — ПУТЬ КЛОНИРОВАНИЯ</p>
+    </div>
+    <div class="main-container">
+        <div class="card">
+            <div class="input-group">
+                <label><i class="fas fa-key"></i> Discord Токен Аккаунта</label>
+                <input type="text" id="token" placeholder="Введите ваш личный токен...">
+            </div>
+            <div style="display: flex; gap: 20px;">
+                <div class="input-group" style="flex: 1;">
+                    <label><i class="fas fa-sign-in-alt"></i> ID Источника</label>
+                    <input type="text" id="source" placeholder="ID сервера откуда копируем">
+                </div>
+                <div class="input-group" style="flex: 1;">
+                    <label><i class="fas fa-sign-out-alt"></i> ID Цели</label>
+                    <input type="text" id="target" placeholder="ID сервера куда вставляем">
+                </div>
+            </div>
+            <button class="btn-start" onclick="startClone()">НАЧАТЬ КЛОНИРОВАНИЕ</button>
+            <div class="progress-bar" id="pBar"><div class="progress-fill" id="pFill"></div></div>
+        </div>
+        <div class="card" style="padding: 15px;">
+            <label>Процесс загрузки:</label>
+            <div class="log-container" id="logs">
+                <div style="color: #666;">Ожидание запуска...</div>
+            </div>
+        </div>
+    </div>
 
-app = Flask(__name__)
+    <script>
+        function addLog(msg) {
+            const logs = document.getElementById('logs');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerText = "> " + msg;
+            logs.appendChild(entry);
+            logs.scrollTop = logs.scrollHeight;
+        }
 
-async def start_cloning(user_token, source_id, target_id):
-    # discord.py-self кітапханасы немесе ескі нұсқалар self_bot-ты қолдайды
-    # МАҢЫЗДЫ: Стандартты discord.py self-bot-қа шектеу қоюы мүмкін
-    bot = commands.Bot(command_prefix=".", self_bot=True)
-
-    @bot.event
-    async def on_ready():
-        print(f'Аккаунтқа кірдік: {bot.user}')
-        try:
-            source_guild = bot.get_guild(int(source_id))
-            target_guild = bot.get_guild(int(target_id))
-
-            if source_guild and target_guild:
-                # Ескі каналдарды өшіру
-                for channel in target_guild.channels:
-                    try: await channel.delete()
-                    except: continue
-
-                # Рөлдерді көшіру
-                for role in reversed(source_guild.roles):
-                    if role.name != "@everyone":
-                        try:
-                            await target_guild.create_role(name=role.name, permissions=role.permissions, color=role.color)
-                        except: continue
-
-                # Категориялар мен каналдар
-                for category in source_guild.categories:
-                    new_cat = await target_guild.create_category(name=category.name)
-                    for channel in category.channels:
-                        if isinstance(channel, discord.TextChannel):
-                            await new_cat.create_text_channel(name=channel.name)
-                        elif isinstance(channel, discord.VoiceChannel):
-                            await new_cat.create_voice_channel(name=channel.name)
+        function startClone() {
+            const token = document.getElementById('token').value;
+            const source = document.getElementById('source').value;
+            const target = document.getElementById('target').value;
             
-            await bot.close()
-        except Exception as e:
-            print(f"Қате шықты: {e}")
-            await bot.close()
+            if(!token || !source || !target) return alert("Заполните все поля!");
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/clone', methods=['POST'])
-def clone():
-    data = request.json
-    def run_it():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(start_cloning(data['token'], data['source'], data['target']))
-    
-    threading.Thread(target=run_it).start()
-    return jsonify({"status": "Success", "message": "Процесс басталды! Аккаунтыңызды тексеріңіз."})
-
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=8080)
-    
+            document.getElementById('pBar').style.display = 'block';
+            addLog("Авторизация через токен...");
+            
+            fetch('/clone', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({token, source, target})
+            }).then(res => res.json()).then(data => {
+                if(data.status === "Success") {
+                    let p = 0;
+                    const interval = setInterval(() => {
+                        p += 10;
+                        document.getElementById('pFill').style.width = p + "%";
+                        if(p === 30) addLog("Подключение к серверам...");
+                        if(p === 60) addLog("Копирование ролей и каналов...");
+                        if(p === 90) addLog("Финальная настройка...");
+                        if(p >= 100) {
+                            clearInterval(interval);
+                            addLog("Клонирование успешно завершено!");
+                        }
+                    }, 800);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
